@@ -17,7 +17,7 @@ internal sealed class Route
 
     public TimeSpan TimeSpent => _nodes.Aggregate(TimeSpan.Zero, (span, node) => span + node.TransitionCost.TimeToArrive);
 
-    public override string ToString()
+    public string Verbose()
     {
         if (_nodes.Any() == false)
         {

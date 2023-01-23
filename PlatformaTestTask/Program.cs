@@ -52,8 +52,8 @@ var departure = new Departure
 
 Console.WriteLine("The Cheapest Path:");
 var cheapestPath = new CheapestRouteBuilder(transport).Build(departure);
-Console.WriteLine(cheapestPath.ToString());
+Console.WriteLine(cheapestPath.Verbose());
 
 Console.WriteLine("The Fastest Path:");
 var fastestPath = new FastestRouteBuilder(transport).Build(departure);
-Console.WriteLine(fastestPath.ToString());
+Console.WriteLine(fastestPath.Verbose());
