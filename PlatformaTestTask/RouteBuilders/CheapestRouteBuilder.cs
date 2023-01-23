@@ -15,7 +15,7 @@ internal sealed class CheapestRouteBuilder : RouteBuilder
             }, (_, costs) =>
             {
                 var (key, value) = costs.Where(kv => kv.Key.StopNumber == departure.FinalStop)
-                                        .MinBy(kv => kv.Value.TimeToArrive);
+                                        .MinBy(kv => kv.Value.MoneyToArrive);
 
                 return new RouteNode
                 {
