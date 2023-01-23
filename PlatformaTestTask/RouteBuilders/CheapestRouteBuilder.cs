@@ -8,10 +8,21 @@ internal sealed class CheapestRouteBuilder : RouteBuilder
 
     public override Route Build(Departure departure)
     {
-        return Build(departure, (previousCost, newCost) =>
-        {
-            return previousCost.MoneyToArrive - newCost.MoneyToArrive;
-        });
+        return Build(departure,
+            (previousCost, newCost) =>
+            {
+                return previousCost.MoneyToArrive - newCost.MoneyToArrive;
+            }, (_, costs) =>
+            {
+                var (key, value) = costs.Where(kv => kv.Key.StopNumber == departure.FinalStop)
+                                        .MinBy(kv => kv.Value.TimeToArrive);
+
+                return new RouteNode
+                {
+                    Id = key,
+                    TransitionCost = value
+                };
+            });
     }
 
     protected override RouteNodeId? FindBestSuitableNode(

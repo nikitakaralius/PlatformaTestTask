@@ -13,7 +13,10 @@ internal abstract class RouteBuilder
 
     public abstract Route Build(Departure departure);
 
-    protected Route Build(Departure departure, Func<TransitionCost, TransitionCost, int> comparer)
+    protected Route Build(
+        Departure departure,
+        Func<TransitionCost, TransitionCost, int> comparer,
+        Func<TimeTransitionDelegate, IReadOnlyDictionary<RouteNodeId, TransitionCost>, IRouteNode> finalNode)
     {
         var transitionDelegate = new TimeTransitionDelegate(_transport, departure);
         var graph = RouteGraph.Create(_transport).AddTransitions(departure.InitialStop, transitionDelegate);
@@ -57,17 +60,7 @@ internal abstract class RouteBuilder
             node = FindBestSuitableNode(costs, processed);
         }
 
-        return new Route(BuildFormattedRoute(costs, parents, () =>
-        {
-            var key = transitionDelegate.MinByArrivalTime(departure.FinalStop);
-            var value = costs[key];
-
-            return new RouteNode
-            {
-                Id = key,
-                TransitionCost = value
-            };
-        }));
+        return new Route(BuildFormattedRoute(costs, parents, finalNode(transitionDelegate, costs)));
     }
 
     protected abstract RouteNodeId? FindBestSuitableNode(
@@ -78,12 +71,11 @@ internal abstract class RouteBuilder
     private static IEnumerable<IRouteNode> BuildFormattedRoute(
         Dictionary<RouteNodeId, TransitionCost> costs,
         Dictionary<RouteNodeId, RouteNodeId?> parents,
-        Func<RouteNode> finalNode
+        IRouteNode finalNode
     )
     {
-        var node = finalNode();
-        var id = node.Id;
-        var transitionCost = node.TransitionCost;
+        var id = finalNode.Id;
+        var transitionCost = finalNode.TransitionCost;
 
         List<IRouteNode> route = new()
         {

@@ -8,13 +8,28 @@ internal sealed class FastestRouteBuilder : RouteBuilder
 
     public override Route Build(Departure departure)
     {
-        return Build(departure, (previousCost, newCost) =>
-        {
-            return previousCost.TimeToArrive.CompareTo(newCost.TimeToArrive);
-        });
+        return Build(departure,
+            (previousCost, newCost) =>
+            {
+                return previousCost.TimeToArrive.CompareTo(newCost.TimeToArrive);
+            },
+            (transitionDelegate, costs) =>
+            {
+                var key = transitionDelegate.MinByArrivalTime(departure.FinalStop);
+                var value = costs[key];
+
+                return new RouteNode
+                {
+                    Id = key,
+                    TransitionCost = value
+                };
+            });
     }
 
-    protected override RouteNodeId? FindBestSuitableNode(Dictionary<RouteNodeId, TransitionCost> costs, ISet<RouteNodeId> processed)
+    protected override RouteNodeId? FindBestSuitableNode(
+        Dictionary<RouteNodeId, TransitionCost> costs,
+        ISet<RouteNodeId> processed
+    )
     {
         var nearestArrival = TimeSpan.MaxValue;
         RouteNodeId? nearestArrivalNode = null;
