@@ -6,6 +6,7 @@ internal sealed class TimeTransitionDelegate : ITransitionDelegate
 {
     private readonly IEnumerable<Transport> _transport;
     private readonly Dictionary<RouteNodeId, TimeOnly> _timeWhenArrived;
+    private readonly Dictionary<int, int[]> _prefixSums = new();
 
     public TimeTransitionDelegate(IEnumerable<Transport> transport, Departure departure)
     {
@@ -51,22 +52,27 @@ internal sealed class TimeTransitionDelegate : ITransitionDelegate
 
     private TimeSpan NearestArrival(Transport transport, int stopNumber, TimeOnly currentTime)
     {
-        int[] prefixSums = new int[transport.TimeBetweenStops.Length + 1];
+        if (_prefixSums.TryGetValue(transport.BusNumber, out int[]? prefixSum) == false)
+        {
+            prefixSum = new int[transport.TimeBetweenStops.Length + 1];
 
-        for (int i = 1; i < prefixSums.Length; i++)
-            prefixSums[i] = transport.TimeBetweenStops[i - 1] + prefixSums[i - 1];
+            for (int i = 1; i < prefixSum.Length; i++)
+                prefixSum[i] = transport.TimeBetweenStops[i - 1] + prefixSum[i - 1];
+
+            _prefixSums[transport.BusNumber] = prefixSum;
+        }
 
         if (currentTime < transport.StartsWorkingAt)
         {
-            return transport.StartsWorkingAt - currentTime + TimeSpan.FromMinutes(prefixSums[stopNumber - 1]);
+            return transport.StartsWorkingAt - currentTime + TimeSpan.FromMinutes(prefixSum[stopNumber - 1]);
         }
 
         int minutesDifference = (currentTime - transport.StartsWorkingAt).Minutes;
-        double loopsPassed = (double) minutesDifference / prefixSums[^1];
+        double loopsPassed = (double) minutesDifference / prefixSum[^1];
 
-        int lesserArrival = (int) loopsPassed * prefixSums[^1] + prefixSums[stopNumber - 1] - minutesDifference;
+        int lesserArrival = (int) loopsPassed * prefixSum[^1] + prefixSum[stopNumber - 1] - minutesDifference;
 
-        int greaterArrival = (int) Math.Ceiling(loopsPassed) * prefixSums[^1] + prefixSums[stopNumber - 1] -
+        int greaterArrival = (int) Math.Ceiling(loopsPassed) * prefixSum[^1] + prefixSum[stopNumber - 1] -
                              minutesDifference;
 
         return TimeSpan.FromMinutes(minutesDifference <= lesserArrival ? lesserArrival : greaterArrival);
