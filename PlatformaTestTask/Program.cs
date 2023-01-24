@@ -50,10 +50,13 @@ var departure = new Departure
     StartTime = startTime
 };
 
-Console.WriteLine("The Cheapest Path:");
-var cheapestPath = new CheapestRouteBuilder(transport).Build(departure);
-Console.WriteLine(cheapestPath.Verbose());
+Console.WriteLine();
 
 Console.WriteLine("The Fastest Path:");
 var fastestPath = new FastestRouteBuilder(transport).Build(departure);
 Console.WriteLine(fastestPath.Verbose());
+
+Console.WriteLine("The Cheapest Path:");
+var cheapestPath = new CheapestRouteBuilder(transport).Build(departure);
+Console.WriteLine(cheapestPath.Verbose());
+

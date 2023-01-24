@@ -1,4 +1,4 @@
-namespace PlatformaTestTask.RouteBuilders;
+namespace PlatformaTestTask.Model;
 
 internal sealed class Departure
 {

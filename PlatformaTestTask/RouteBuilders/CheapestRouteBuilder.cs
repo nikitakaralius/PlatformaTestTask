@@ -2,48 +2,22 @@ using PlatformaTestTask.Model;
 
 namespace PlatformaTestTask.RouteBuilders;
 
-internal sealed class CheapestRouteBuilder : RouteBuilder
+internal sealed class CheapestRouteBuilder : IRouteBuilder
 {
-    public CheapestRouteBuilder(IEnumerable<Transport> transport) : base(transport) { }
+    private readonly RouteBuilder<int> _routeBuilder;
 
-    public override Route Build(Departure departure)
+    public CheapestRouteBuilder(IEnumerable<Transport> transport)
     {
-        return Build(departure,
-            (previousCost, newCost) =>
-            {
-                return previousCost.MoneyToArrive - newCost.MoneyToArrive;
-            }, (_, costs) =>
-            {
-                var (key, value) = costs.Where(kv => kv.Key.StopNumber == departure.FinalStop)
-                                        .MinBy(kv => kv.Value.MoneyToArrive);
-
-                return new RouteNode
-                {
-                    Id = key,
-                    TransitionCost = value
-                };
-            });
+        _routeBuilder = new RouteBuilder<int>(transport, ChooseNearestTime, cost => cost.AccumulativeCost);
     }
 
-    protected override RouteNodeId? FindBestSuitableNode(
-        Dictionary<RouteNodeId, TransitionCost> costs,
-        ISet<RouteNodeId> processed
-    )
+    public Route Build(Departure departure)
     {
-        int lowestCost = int.MaxValue;
-        RouteNodeId? lowestCostNode = null;
+        return _routeBuilder.Build(departure);
+    }
 
-        foreach (var node in costs.Keys)
-        {
-            int cost = costs[node].MoneyToArrive;
-
-            if (cost < lowestCost && processed.Contains(node) == false)
-            {
-                lowestCost = cost;
-                lowestCostNode = node;
-            }
-        }
-
-        return lowestCostNode;
+    private int ChooseNearestTime(TransitionCost previous, TransitionCost next)
+    {
+        return previous.AccumulativeCost.CompareTo(next.AccumulativeCost);
     }
 }

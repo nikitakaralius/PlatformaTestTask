@@ -2,49 +2,22 @@ using PlatformaTestTask.Model;
 
 namespace PlatformaTestTask.RouteBuilders;
 
-internal sealed class FastestRouteBuilder : RouteBuilder
+internal sealed class FastestRouteBuilder : IRouteBuilder
 {
-    public FastestRouteBuilder(IEnumerable<Transport> transport) : base(transport) { }
+    private readonly RouteBuilder<TimeOnly> _routeBuilder;
 
-    public override Route Build(Departure departure)
+    public FastestRouteBuilder(IEnumerable<Transport> transport)
     {
-        return Build(departure,
-            (previousCost, newCost) =>
-            {
-                return previousCost.TimeToArrive.CompareTo(newCost.TimeToArrive);
-            },
-            (transitionDelegate, costs) =>
-            {
-                var key = transitionDelegate.MinByArrivalTime(departure.FinalStop);
-                var value = costs[key];
-
-                return new RouteNode
-                {
-                    Id = key,
-                    TransitionCost = value
-                };
-            });
+        _routeBuilder = new RouteBuilder<TimeOnly>(transport, ChooseNearestTime, cost => cost.AccumulativeTime);
     }
 
-    protected override RouteNodeId? FindBestSuitableNode(
-        Dictionary<RouteNodeId, TransitionCost> costs,
-        ISet<RouteNodeId> processed
-    )
+    public Route Build(Departure departure)
     {
-        var nearestArrival = TimeSpan.MaxValue;
-        RouteNodeId? nearestArrivalNode = null;
+        return _routeBuilder.Build(departure);
+    }
 
-        foreach (var node in costs.Keys)
-        {
-            var cost = costs[node].TimeToArrive;
-
-            if (cost < nearestArrival && processed.Contains(node) == false)
-            {
-                nearestArrival = cost;
-                nearestArrivalNode = node;
-            }
-        }
-
-        return nearestArrivalNode;
+    private int ChooseNearestTime(TransitionCost previous, TransitionCost next)
+    {
+        return previous.AccumulativeTime.CompareTo(next.AccumulativeTime);
     }
 }

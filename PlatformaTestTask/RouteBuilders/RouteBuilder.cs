@@ -2,169 +2,174 @@ using PlatformaTestTask.Model;
 
 namespace PlatformaTestTask.RouteBuilders;
 
-internal abstract class RouteBuilder
+internal sealed class RouteBuilder<TOptimize> : IRouteBuilder
 {
     private readonly IEnumerable<Transport> _transport;
+    private readonly Func<TransitionCost, TransitionCost, int> _comparer;
+    private readonly Func<TransitionCost, TOptimize> _finalElementSelector;
 
-    protected RouteBuilder(IEnumerable<Transport> transport)
+    public RouteBuilder(
+        IEnumerable<Transport> transport,
+        Func<TransitionCost, TransitionCost, int> comparer,
+        Func<TransitionCost, TOptimize> finalElementSelector)
     {
         _transport = transport;
+        _comparer = comparer;
+        _finalElementSelector = finalElementSelector;
     }
 
-    public abstract Route Build(Departure departure);
-
-    protected Route Build(
-        Departure departure,
-        Func<TransitionCost, TransitionCost, int> comparer,
-        Func<TimeTransitionDelegate, IReadOnlyDictionary<RouteNodeId, TransitionCost>, IRouteNode> finalNode)
+    public Route Build(Departure departure)
     {
-        var transitionDelegate = new TimeTransitionDelegate(_transport, departure);
-        var graph = RouteGraph.Create(_transport).AddTransitions(departure.InitialStop, transitionDelegate);
-
-        var costs = CreateCosts(graph, transitionDelegate);
+        var graph = RouteGraph.Create(departure.InitialStop, _transport);
+        var costs = CreateCosts(departure, graph);
         var parents = CreateParents(graph);
-        var processed = new HashSet<RouteNodeId>();
+        var processed = new HashSet<RouteNode>();
 
-        RouteNodeId? node = FindBestSuitableNode(costs, processed);
+        RouteNode? currentPosition = FindNearestArrivalNode(costs, processed);
 
-        if (node is null)
+        while (currentPosition is not null)
         {
-            return Route.Empty;
-        }
-
-        while (node is not null)
-        {
-            var cost = costs[node];
-            var destinations = graph.Nodes[node];
+            var accumulatedCost = costs[currentPosition];
+            var destinations = graph.Nodes[currentPosition];
 
             foreach (var destination in destinations)
             {
-                int newMoneyToArrive = cost.MoneyToArrive + destination.TransitionCost.MoneyToArrive;
-                var newTimeToArrive = destination.TransitionCost.TimeToArrive;
+                var costToArrive = CostToArrive(currentPosition, destination, accumulatedCost);
 
-                var newCost = new TransitionCost
+                if (_comparer(costs[destination], costToArrive) > 0)
                 {
-                    MoneyToArrive = newMoneyToArrive,
-                    TimeToArrive = newTimeToArrive
-                };
-
-                if (comparer(costs[destination.Id], newCost) > 0)
-                {
-                    costs[destination.Id] = destination.TransitionCost with {MoneyToArrive = newMoneyToArrive};
-                    parents[destination.Id] = node;
-                    transitionDelegate.UpdateArrival(node, destination.Id, destination.TransitionCost);
+                    costs[destination] = costToArrive;
+                    parents[destination] = currentPosition;
                 }
             }
 
-            processed.Add(node);
-            node = FindBestSuitableNode(costs, processed);
+            processed.Add(currentPosition);
+            currentPosition = FindNearestArrivalNode(costs, processed);
         }
 
-        return new Route(BuildFormattedRoute(costs, parents, finalNode(transitionDelegate, costs)));
+        return new Route(TrackFastestRoute(departure, costs, parents));
     }
 
-    protected abstract RouteNodeId? FindBestSuitableNode(
-        Dictionary<RouteNodeId, TransitionCost> costs,
-        ISet<RouteNodeId> processed
-    );
-
-    private static IEnumerable<IRouteNode> BuildFormattedRoute(
-        Dictionary<RouteNodeId, TransitionCost> costs,
-        Dictionary<RouteNodeId, RouteNodeId?> parents,
-        IRouteNode finalNode
-    )
+    private IEnumerable<(RouteNode, TransitionCost)> TrackFastestRoute(Departure departure, Dictionary<RouteNode, TransitionCost> costs, Dictionary<RouteNode, RouteNode?> parents)
     {
-        var id = finalNode.Id;
-        var transitionCost = finalNode.TransitionCost;
+        var (rootNode, transitionCost) = costs.Where(kv => kv.Key.StopNumber == departure.FinalStop)
+                                              .MinBy(kv => _finalElementSelector(kv.Value));
 
-        List<IRouteNode> route = new()
+        var route = new List<(RouteNode, TransitionCost)>();
+
+        do
         {
-            new RouteNode
+            if (rootNode is null)
             {
-                Id = id,
-                TransitionCost = transitionCost
+                return Array.Empty<(RouteNode, TransitionCost)>();
             }
-        };
 
-        while (parents[id!] != RouteNodeId.Initial)
-        {
-            id = parents[id!];
-            var cost = costs[id!];
-
-            var routeNode = new RouteNode
-            {
-                Id = id!,
-                TransitionCost = cost
-            };
-
-            route.Add(routeNode);
+            route.Add((rootNode, transitionCost));
+            rootNode = parents[rootNode]!;
+            transitionCost = costs[rootNode];
         }
+        while (rootNode != RouteNode.Initial);
 
         route.Reverse();
-
-        int previousCost = route[0].TransitionCost.MoneyToArrive;
-
-        for (int i = 1; i < route.Count; i++)
-        {
-            int intermediateValue = route[i].TransitionCost.MoneyToArrive - previousCost;
-            previousCost = route[i].TransitionCost.MoneyToArrive;
-            route[i].TransitionCost.MoneyToArrive = intermediateValue;
-        }
 
         return route;
     }
 
-    private static Dictionary<RouteNodeId, TransitionCost> CreateCosts(
-        RouteGraph graph,
-        TimeTransitionDelegate transitionDelegate
-    )
+    private TransitionCost CostToArrive(RouteNode from, RouteNode to, TransitionCost accumulatedCost)
     {
-        var costs = new Dictionary<RouteNodeId, TransitionCost>();
+        var toRoute = _transport.First(t => t.BusNumber == to.BusNumber);
 
-        foreach (var node in graph.Nodes[RouteNodeId.Initial])
+        int transitionCost = from.BusNumber == to.BusNumber ? 0 : toRoute.Cost;
+
+        return new TransitionCost
         {
-            costs.Add(node.Id, node.TransitionCost);
+            AccumulativeCost = accumulatedCost.AccumulativeCost + transitionCost,
+            AccumulativeTime = NearestArrival(to, accumulatedCost.AccumulativeTime)
+        };
+    }
 
-            transitionDelegate.UpdateArrival(
-                RouteNodeId.Initial, node.Id, transitionDelegate.CalculateTransitionCost(RouteNodeId.Initial, node.Id));
+    private TimeOnly NearestArrival(RouteNode to, TimeOnly currentTime)
+    {
+        int[] PrefixSum(Transport transport)
+        {
+            int[] prefixSum = new int[transport.StopNumbers.Length + 1];
+
+            for (int i = 1; i < prefixSum.Length; i++)
+                prefixSum[i] = transport.TimeBetweenStops[i - 1] + prefixSum[i - 1];
+
+            return prefixSum;
         }
 
-        foreach (var nodeId in graph.Nodes.Keys.Except(costs.Keys))
-        {
-            if (nodeId == RouteNodeId.Initial) continue;
+        var toRoute = _transport.First(t => t.BusNumber == to.BusNumber);
 
-            costs.Add(nodeId, TransitionCost.Max);
+        int[] toPrefixSum = PrefixSum(toRoute);
+        int stopIndex = toRoute.StopNumbers.ToList().IndexOf(to.StopNumber);
+
+        if (currentTime.AddMinutes(toPrefixSum[stopIndex]) <= toRoute.StartsWorkingAt)
+        {
+            return toRoute.StartsWorkingAt;
         }
+
+        var timePassedSinceStarted = currentTime - toRoute.StartsWorkingAt;
+        var loopsPassed = timePassedSinceStarted.TotalMinutes / toPrefixSum[^1];
+
+        var lesserTime =
+            toRoute.StartsWorkingAt.AddMinutes((int) loopsPassed * toPrefixSum[^1] + toPrefixSum[stopIndex]);
+
+        var greaterTime =
+            toRoute.StartsWorkingAt.AddMinutes((int) Math.Ceiling(loopsPassed) * toPrefixSum[^1] +
+                                               toPrefixSum[stopIndex]);
+
+        return currentTime <= lesserTime ? lesserTime : greaterTime;
+    }
+
+    private static Dictionary<RouteNode, TransitionCost> CreateCosts(Departure departure, RouteGraph graph)
+    {
+        var costs = graph.Nodes.Keys.ToDictionary(node => node, _ => TransitionCost.Max);
+
+        costs[RouteNode.Initial] = new TransitionCost
+        {
+            AccumulativeCost = 0,
+            AccumulativeTime = departure.StartTime
+        };
 
         return costs;
     }
 
-    private static Dictionary<RouteNodeId, RouteNodeId?> CreateParents(RouteGraph graph)
+    private static Dictionary<RouteNode, RouteNode?> CreateParents(RouteGraph graph)
     {
-        var parents = new Dictionary<RouteNodeId, RouteNodeId?>();
+        var parents = new Dictionary<RouteNode, RouteNode?>();
 
-        foreach (var parent in graph.Nodes.Keys)
+        foreach (var node in graph.Nodes.Keys)
         {
-            foreach (var child in graph.Nodes[parent])
-            {
-                if (parents.ContainsKey(child.Id)) continue;
-
-                parents.Add(child.Id, null);
-            }
+            parents.Add(node, null);
         }
 
-        foreach (var node in graph.Nodes[RouteNodeId.Initial])
+        foreach (var child in graph.Nodes[RouteNode.Initial])
         {
-            if (parents.ContainsKey(node.Id))
-            {
-                parents[node.Id] = RouteNodeId.Initial;
-            }
-            else
-            {
-                parents.Add(node.Id, RouteNodeId.Initial);
-            }
+            parents[child] = RouteNode.Initial;
         }
 
         return parents;
+    }
+
+    private RouteNode? FindNearestArrivalNode(
+        Dictionary<RouteNode, TransitionCost> costs,
+        HashSet<RouteNode> processed
+    )
+    {
+        var nearestArrival = TransitionCost.Max;
+        RouteNode? nearestArrivalNode = null;
+
+        foreach (var (node, cost) in costs)
+        {
+            if (_comparer(nearestArrival, cost) > 0 && processed.Contains(node) == false)
+            {
+                nearestArrival = cost;
+                nearestArrivalNode = node;
+            }
+        }
+
+        return nearestArrivalNode;
     }
 }

@@ -2,36 +2,43 @@ using PlatformaTestTask.Model;
 
 namespace PlatformaTestTask.RouteBuilders;
 
+internal sealed record RouteNode(int BusNumber, int StopNumber)
+{
+    public static readonly RouteNode Initial = new(-1, -1);
+}
+
 internal sealed class RouteGraph
 {
-    private readonly Dictionary<RouteNodeId, List<IRouteNode>> _graph;
+    private readonly Dictionary<RouteNode, List<RouteNode>> _graph;
 
-    private RouteGraph(Dictionary<RouteNodeId, List<IRouteNode>> graph)
+    private RouteGraph(Dictionary<RouteNode, List<RouteNode>> graph)
     {
         _graph = graph;
     }
 
-    public IReadOnlyDictionary<RouteNodeId, List<IRouteNode>> Nodes => _graph;
+    public IReadOnlyDictionary<RouteNode, List<RouteNode>> Nodes => _graph;
 
-    public static RouteGraph Create(IEnumerable<Transport> transport)
+    public static RouteGraph Create(int initialStop, IEnumerable<Transport> transport)
     {
-        var graph = new Dictionary<RouteNodeId, List<IRouteNode>>();
+        var graph = new Dictionary<RouteNode, List<RouteNode>>();
 
+        AddGraphEdgesPerEachRoute(transport, graph);
+        BreakLoopAtStartStop(initialStop, graph);
+        AddEdgesFromInitialNode(initialStop, graph);
+        AddEdgesBetweenDifferentRoutes(graph);
+
+        return new RouteGraph(graph);
+    }
+
+    private static void AddGraphEdgesPerEachRoute(IEnumerable<Transport> transport, Dictionary<RouteNode, List<RouteNode>> graph)
+    {
         void AddGraphEdge(int previous, int current, Transport route)
         {
-            var previousId = new RouteNodeId(route.BusNumber, route.StopNumbers[previous]);
+            var previousNode = new RouteNode(route.BusNumber, route.StopNumbers[previous]);
 
-            graph.Add(previousId, new List<IRouteNode>
+            graph.Add(previousNode, new List<RouteNode>
             {
-                new RouteNode
-                {
-                    Id = new RouteNodeId(route.BusNumber, route.StopNumbers[current]),
-                    TransitionCost = new TransitionCost
-                    {
-                        TimeToArrive = TimeSpan.FromMinutes(route.TimeBetweenStops[previous]),
-                        MoneyToArrive = 0
-                    }
-                }
+                new(route.BusNumber, route.StopNumbers[current])
             });
         }
 
@@ -44,63 +51,42 @@ internal sealed class RouteGraph
 
             AddGraphEdge(route.StopNumbers.Length - 1, 0, route);
         }
-
-        return new RouteGraph(graph);
     }
 
-    public RouteGraph AddTransitions(int initialStop, ITransitionDelegate transitionDelegate)
+    private static void BreakLoopAtStartStop(int startStop, Dictionary<RouteNode, List<RouteNode>> graph)
     {
-        BreakLoopOn(initialStop);
-
-        _graph[RouteNodeId.Initial] = new List<IRouteNode>();
-
-        AddTransitionFromInitialNode(initialStop, transitionDelegate);
-
-        AddTransitionsBetweenStops(transitionDelegate);
-
-        return this;
-    }
-
-    private void BreakLoopOn(int initialStop)
-    {
-        foreach ((_, List<IRouteNode> value) in _graph)
+        foreach ((_, List<RouteNode> children) in graph)
         {
-            value.RemoveAll(node => node.Id.StopNumber == initialStop);
+            children.RemoveAll(child => child.StopNumber == startStop);
         }
     }
 
-    private void AddTransitionsBetweenStops(ITransitionDelegate transitionDelegate)
+    private static void AddEdgesBetweenDifferentRoutes(Dictionary<RouteNode, List<RouteNode>> graph)
     {
-        foreach (var id1 in _graph.Keys)
+        foreach (var node1 in graph.Keys)
         {
-            foreach (var id2 in _graph.Keys)
+            foreach (var node2 in graph.Keys)
             {
-                if (id1 == id2) continue;
+                if (node1 == node2)
+                    continue;
 
-                if (id1.StopNumber != id2.StopNumber) continue;
+                if (node1.StopNumber != node2.StopNumber)
+                    continue;
 
-                _graph[id1].Add(new TransportChangeRouteNode
-                {
-                    Id = id2,
-                    From = id1,
-                    Delegate = transitionDelegate
-                });
+                graph[node1].Add(node2);
             }
         }
     }
 
-    private void AddTransitionFromInitialNode(int initialStop, ITransitionDelegate transitionDelegate)
+    private static void AddEdgesFromInitialNode(int initialStop, Dictionary<RouteNode, List<RouteNode>> graph)
     {
-        foreach (var id in _graph.Keys)
+        graph[RouteNode.Initial] = new List<RouteNode>();
+
+        foreach (var node in graph.Keys)
         {
-            if (id.StopNumber == initialStop)
+            if (node.StopNumber == initialStop)
             {
-                _graph[RouteNodeId.Initial].Add(new TransportChangeRouteNode
-                {
-                    Id = id,
-                    From = RouteNodeId.Initial,
-                    Delegate = transitionDelegate
-                });
+                graph[RouteNode.Initial].Add(node);
             }
         }
     }
