@@ -25,7 +25,7 @@ internal sealed class RouteBuilder<TOptimize> : IRouteBuilder
         var parents = CreateParents(graph);
         var processed = new HashSet<RouteNode>();
 
-        RouteNode? currentPosition = FindNearestArrivalNode(costs, processed);
+        RouteNode? currentPosition = FindBestArrivalNode(costs, processed);
 
         while (currentPosition is not null)
         {
@@ -44,13 +44,13 @@ internal sealed class RouteBuilder<TOptimize> : IRouteBuilder
             }
 
             processed.Add(currentPosition);
-            currentPosition = FindNearestArrivalNode(costs, processed);
+            currentPosition = FindBestArrivalNode(costs, processed);
         }
 
-        return new Route(TrackFastestRoute(departure, costs, parents));
+        return new Route(TrackBestRoute(departure, costs, parents));
     }
 
-    private IEnumerable<(RouteNode, TransitionCost)> TrackFastestRoute(Departure departure, Dictionary<RouteNode, TransitionCost> costs, Dictionary<RouteNode, RouteNode?> parents)
+    private IEnumerable<(RouteNode, TransitionCost)> TrackBestRoute(Departure departure, Dictionary<RouteNode, TransitionCost> costs, Dictionary<RouteNode, RouteNode?> parents)
     {
         var (rootNode, transitionCost) = costs.Where(kv => kv.Key.StopNumber == departure.FinalStop)
                                               .MinBy(kv => _finalElementSelector(kv.Value));
@@ -153,7 +153,7 @@ internal sealed class RouteBuilder<TOptimize> : IRouteBuilder
         return parents;
     }
 
-    private RouteNode? FindNearestArrivalNode(
+    private RouteNode? FindBestArrivalNode(
         Dictionary<RouteNode, TransitionCost> costs,
         HashSet<RouteNode> processed
     )
