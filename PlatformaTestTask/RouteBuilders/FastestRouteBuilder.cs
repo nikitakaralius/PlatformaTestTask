@@ -4,11 +4,11 @@ namespace PlatformaTestTask.RouteBuilders;
 
 internal sealed class FastestRouteBuilder : IRouteBuilder
 {
-    private readonly RouteBuilder<TimeOnly> _routeBuilder;
+    private readonly RouteBuilder _routeBuilder;
 
     public FastestRouteBuilder(IEnumerable<Transport> transport)
     {
-        _routeBuilder = new RouteBuilder<TimeOnly>(transport, ChooseNearestTime, cost => cost.AccumulativeTime);
+        _routeBuilder = new RouteBuilder(transport, ChooseNearestTime);
     }
 
     public Route Build(Departure departure)

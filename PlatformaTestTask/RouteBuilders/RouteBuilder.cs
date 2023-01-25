@@ -2,20 +2,17 @@ using PlatformaTestTask.Model;
 
 namespace PlatformaTestTask.RouteBuilders;
 
-internal sealed class RouteBuilder<TOptimize> : IRouteBuilder
+internal sealed class RouteBuilder : IRouteBuilder
 {
     private readonly IEnumerable<Transport> _transport;
     private readonly Func<TransitionCost, TransitionCost, int> _comparer;
-    private readonly Func<TransitionCost, TOptimize> _finalElementSelector;
 
     public RouteBuilder(
         IEnumerable<Transport> transport,
-        Func<TransitionCost, TransitionCost, int> comparer,
-        Func<TransitionCost, TOptimize> finalElementSelector)
+        Func<TransitionCost, TransitionCost, int> comparer)
     {
         _transport = transport;
         _comparer = comparer;
-        _finalElementSelector = finalElementSelector;
     }
 
     public Route Build(Departure departure)
@@ -52,8 +49,13 @@ internal sealed class RouteBuilder<TOptimize> : IRouteBuilder
 
     private IEnumerable<(RouteNode, TransitionCost)> TrackBestRoute(Departure departure, Dictionary<RouteNode, TransitionCost> costs, Dictionary<RouteNode, RouteNode?> parents)
     {
+        var comparer = Comparer<KeyValuePair<RouteNode, TransitionCost>>.Create((previous, current) =>
+        {
+            return _comparer(previous.Value, current.Value);
+        });
+
         var (rootNode, transitionCost) = costs.Where(kv => kv.Key.StopNumber == departure.FinalStop)
-                                              .MinBy(kv => _finalElementSelector(kv.Value));
+                                              .Min(comparer);
 
         var route = new List<(RouteNode, TransitionCost)>();
 

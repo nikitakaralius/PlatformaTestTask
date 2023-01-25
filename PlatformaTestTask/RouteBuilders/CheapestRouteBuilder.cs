@@ -4,11 +4,11 @@ namespace PlatformaTestTask.RouteBuilders;
 
 internal sealed class CheapestRouteBuilder : IRouteBuilder
 {
-    private readonly RouteBuilder<int> _routeBuilder;
+    private readonly RouteBuilder _routeBuilder;
 
     public CheapestRouteBuilder(IEnumerable<Transport> transport)
     {
-        _routeBuilder = new RouteBuilder<int>(transport, ChooseNearestTime, cost => cost.AccumulativeCost);
+        _routeBuilder = new RouteBuilder(transport, ChooseNearestTime);
     }
 
     public Route Build(Departure departure)
